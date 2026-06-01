@@ -78,6 +78,7 @@ pub enum CArchiveEntryType {
 | `target_dir` | `*const c_char` | 生成的压缩包所保存的目标输出目录路径（以 `\0` 结尾的 C 字符串）。 |
 | `target_name` | `*const c_char` | 压缩包的文件名（含后缀，如 `archive.haf`，以 `\0` 结尾的 C 字符串）。 |
 | `password` | `*const c_char` | 压缩加密密码（以 `\0` 结尾的 C 字符串）。若无需加密，请传入**空指针（NULL/nullptr）**。 |
+| `overwrite` | `bool` | 若目标同名压缩包已存在，指示是否覆盖该文件。`true` 表示直接覆盖，`false` 表示不覆盖并返回 `AlreadyExists` (-7) 错误。 |
 
 ### 2.4 CDecompressorConfig (解压配置)
 控制解压缩流程的配置结构体。
@@ -105,6 +106,7 @@ pub enum CArchiveEntryType {
 | `InvalidArchive` | `-4` | 非法的 HAF 归档文件（可能文件损坏，魔数不对）。 |
 | `PasswordRequired` | `-5` | 该压缩包已加密，必须提供解密密码。 |
 | `PasswordMismatch` | `-6` | 解密密码错误。 |
+| `AlreadyExists` | `-7` | 目标项（已解压的目标文件或压缩包目标路径）已存在，且配置为不进行覆盖。 |
 | `PanicTriggered` | `-99` | 内部 Rust 代码触发了异常（Panic），但已被安全捕获，未导致宿主进程崩溃。 |
 
 ---
@@ -150,6 +152,7 @@ typedef enum {
     HUFFMAN_INVALID_ARCHIVE = -4,
     HUFFMAN_PASSWORD_REQUIRED = -5,
     HUFFMAN_PASSWORD_MISMATCH = -6,
+    HUFFMAN_ALREADY_EXISTS = -7,
     HUFFMAN_PANIC_TRIGGERED = -99
 } HuffmanResult;
 
@@ -174,6 +177,7 @@ typedef struct {
     const char* target_dir;
     const char* target_name;
     const char* password;
+    bool overwrite;
 } CCompressorConfig;
 
 typedef struct {
@@ -212,6 +216,7 @@ int main() {
     comp_config.target_dir = "C:\\path\\to\\output";
     comp_config.target_name = "my_archive.haf";
     comp_config.password = "my_secure_password"; // 传 NULL 则为不加密
+    comp_config.overwrite = true; // 是否覆盖已有同名压缩包
 
     printf("开始加密压缩...\n");
     int comp_res = huffman_compress(&comp_config);

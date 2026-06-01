@@ -71,6 +71,7 @@ pub struct Compressor {
     pub target_dir: PathBuf,
     pub target_name: String,
     pub password: Option<String>,
+    pub overwrite: bool,
 }
 
 impl Compressor {
@@ -90,11 +91,17 @@ impl Compressor {
             target_dir: target_dir.into(),
             target_name,
             password: None,
+            overwrite: true,
         }
     }
 
     pub fn with_password(mut self, password: String) -> Self {
         self.password = Some(password);
+        self
+    }
+
+    pub fn with_overwrite(mut self, overwrite: bool) -> Self {
+        self.overwrite = overwrite;
         self
     }
 
@@ -212,7 +219,10 @@ impl Compressor {
         // 5. 写入物理 HAF 文件
         fs::create_dir_all(&self.target_dir)?;
         let out_archive_path = self.target_dir.join(&self.target_name);
-        let mut out_file = File::create(out_archive_path)?;
+        if !self.overwrite && out_archive_path.exists() {
+            return Err(HuffmanError::AlreadyExists(out_archive_path));
+        }
+        let mut out_file = File::create(&out_archive_path)?;
         let tree_bytes = canonical.serialize();
 
         if let Some(ref pwd) = self.password {

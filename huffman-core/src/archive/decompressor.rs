@@ -268,6 +268,10 @@ impl Decompressor {
 
             let target_path = target_dir.join(&relative_path);
 
+            if target_path.exists() {
+                return Err(HuffmanError::AlreadyExists(target_path));
+            }
+
             if entry_type == 0x01 {
                 let mut file_size_buf = [0u8; 8];
                 decode_reader.read_exact(&mut file_size_buf).map_err(|e| {

@@ -9,6 +9,7 @@ pub enum HuffmanError {
     InvalidParameters,
     PasswordRequired,
     PasswordMismatch,
+    AlreadyExists(std::path::PathBuf),
 }
 
 impl fmt::Display for HuffmanError {
@@ -20,6 +21,7 @@ impl fmt::Display for HuffmanError {
             Self::InvalidParameters => write!(f, "Invalid parameters provided"),
             Self::PasswordRequired => write!(f, "Password is required for this encrypted archive"),
             Self::PasswordMismatch => write!(f, "Incorrect password or corrupted archive"),
+            Self::AlreadyExists(path) => write!(f, "Target path already exists: {}", path.display()),
         }
     }
 }

@@ -14,6 +14,7 @@ pub enum HuffmanResult {
     InvalidArchive = -4,
     PasswordRequired = -5,
     PasswordMismatch = -6,
+    AlreadyExists = -7,
     PanicTriggered = -99,
 }
 
@@ -47,6 +48,7 @@ pub struct CCompressorConfig {
     pub target_dir: *const c_char,
     pub target_name: *const c_char,
     pub password: *const c_char,
+    pub overwrite: bool,
 }
 
 /// 兼容 C 的 Decompressor 配置结构体
@@ -123,7 +125,8 @@ pub unsafe extern "C" fn huffman_compress(config: *const CCompressorConfig) -> c
         };
 
         let mut compressor =
-            huffman_core::Compressor::new(workspace, compressor_entries, target_dir, target_name);
+            huffman_core::Compressor::new(workspace, compressor_entries, target_dir, target_name)
+                .with_overwrite(cfg.overwrite);
         if !cfg.password.is_null() {
             if let Some(pwd) = utils::convert_c_str_to_string(cfg.password) {
                 compressor = compressor.with_password(pwd);
@@ -147,6 +150,9 @@ pub unsafe extern "C" fn huffman_compress(config: *const CCompressorConfig) -> c
             }
             Err(huffman_core::error::HuffmanError::PasswordMismatch) => {
                 HuffmanResult::PasswordMismatch as c_int
+            }
+            Err(huffman_core::error::HuffmanError::AlreadyExists(_)) => {
+                HuffmanResult::AlreadyExists as c_int
             }
         }
     })
@@ -205,6 +211,9 @@ pub unsafe extern "C" fn huffman_decompress(config: *const CDecompressorConfig) 
             }
             Err(huffman_core::error::HuffmanError::PasswordMismatch) => {
                 HuffmanResult::PasswordMismatch as c_int
+            }
+            Err(huffman_core::error::HuffmanError::AlreadyExists(_)) => {
+                HuffmanResult::AlreadyExists as c_int
             }
         }
     })
@@ -275,6 +284,7 @@ mod tests {
             target_dir: target_dir_c.as_ptr(),
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
+            overwrite: true,
         };
 
         unsafe {
@@ -348,6 +358,7 @@ mod tests {
             target_dir: target_dir_c.as_ptr(),
             target_name: target_name_c.as_ptr(),
             password: password_c.as_ptr(),
+            overwrite: true,
         };
 
         unsafe {
@@ -424,6 +435,7 @@ mod tests {
             target_dir: target_dir_c.as_ptr(),
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
+            overwrite: true,
         };
 
         unsafe {
@@ -447,6 +459,94 @@ mod tests {
             assert!(restored_file.exists());
             let content = fs::read_to_string(restored_file).unwrap();
             assert_eq!(content, "hello from DLL workspace all!");
+        }
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_ffi_overwrite_and_already_exists() {
+        let temp_dir = std::env::temp_dir().join("huffman_dll_test_overwrite");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let workspace_dir = temp_dir.join("workspace");
+        fs::create_dir_all(&workspace_dir).unwrap();
+
+        let test_file = workspace_dir.join("hello.txt");
+        fs::write(&test_file, b"hello world").unwrap();
+
+        let target_dir = temp_dir.join("output");
+        fs::create_dir_all(&target_dir).unwrap();
+        let target_name = "archive.haf";
+
+        // 先创建一个同名文件模拟冲突
+        let target_archive_path = target_dir.join(target_name);
+        fs::write(&target_archive_path, b"already exists archive data").unwrap();
+
+        let workspace_c = CString::new(workspace_dir.to_str().unwrap()).unwrap();
+        let relative_path_c = CString::new("hello.txt").unwrap();
+        let name_c = CString::new("hello.txt").unwrap();
+        let target_dir_c = CString::new(target_dir.to_str().unwrap()).unwrap();
+        let target_name_c = CString::new(target_name).unwrap();
+
+        let entry = CArchiveEntry {
+            entry_type: CArchiveEntryType::File,
+            relative_path: relative_path_c.as_ptr(),
+            name: name_c.as_ptr(),
+            recursive: false,
+        };
+
+        // 1. 测试当 overwrite 为 false 时压缩，应该报错 AlreadyExists (-7)
+        let config_no_overwrite = CCompressorConfig {
+            workspace: workspace_c.as_ptr(),
+            entries: &entry,
+            entries_count: 1,
+            target_dir: target_dir_c.as_ptr(),
+            target_name: target_name_c.as_ptr(),
+            password: ptr::null(),
+            overwrite: false,
+        };
+
+        unsafe {
+            let res = huffman_compress(&config_no_overwrite);
+            assert_eq!(res, HuffmanResult::AlreadyExists as c_int);
+        }
+
+        // 2. 测试当 overwrite 为 true 时压缩，应该成功
+        let config_overwrite = CCompressorConfig {
+            workspace: workspace_c.as_ptr(),
+            entries: &entry,
+            entries_count: 1,
+            target_dir: target_dir_c.as_ptr(),
+            target_name: target_name_c.as_ptr(),
+            password: ptr::null(),
+            overwrite: true,
+        };
+
+        unsafe {
+            let res = huffman_compress(&config_overwrite);
+            assert_eq!(res, HuffmanResult::Success as c_int);
+        }
+
+        // 3. 测试解压时目标路径存在同名文件，应该报错 AlreadyExists (-7)
+        let decomp_dir = temp_dir.join("decompressed");
+        fs::create_dir_all(&decomp_dir).unwrap();
+        // 创建一个同名文件以阻碍解压
+        let restored_file_conflict = decomp_dir.join("hello.txt");
+        fs::write(&restored_file_conflict, b"pre-existing file").unwrap();
+
+        let decomp_dir_c = CString::new(decomp_dir.to_str().unwrap()).unwrap();
+        let decomp_config = CDecompressorConfig {
+            archive_dir: target_dir_c.as_ptr(),
+            archive_name: target_name_c.as_ptr(),
+            target_dir: decomp_dir_c.as_ptr(),
+            password: ptr::null(),
+        };
+
+        unsafe {
+            let res = huffman_decompress(&decomp_config);
+            assert_eq!(res, HuffmanResult::AlreadyExists as c_int);
         }
 
         let _ = fs::remove_dir_all(&temp_dir);
