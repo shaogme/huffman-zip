@@ -152,7 +152,7 @@ impl Decompressor {
         // 确保目标解压目录存在
         fs::create_dir_all(&self.target_dir)?;
 
-        // 定义要加载的数据结构（完全不带未使用字段与 allow）
+        // 定义要加载的数据结构
         struct IndexEntry {
             entry_type: u8,
             relative_path: String,
