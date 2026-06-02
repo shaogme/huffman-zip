@@ -131,6 +131,7 @@ impl CanonicalTree {
 }
 
 /// 解码树节点，用于在解压时前缀码的快速比特流匹配
+#[derive(Clone)]
 pub struct DecodeNode {
     pub symbol: Option<u8>,
     pub left: Option<Box<DecodeNode>>,

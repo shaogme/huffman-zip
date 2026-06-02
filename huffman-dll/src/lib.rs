@@ -49,6 +49,7 @@ pub struct CCompressorConfig {
     pub target_name: *const c_char,
     pub password: *const c_char,
     pub overwrite: bool,
+    pub parallelism: usize,
 }
 
 /// 兼容 C 的 Decompressor 配置结构体
@@ -59,6 +60,7 @@ pub struct CDecompressorConfig {
     pub archive_name: *const c_char,
     pub target_dir: *const c_char,
     pub password: *const c_char,
+    pub parallelism: usize,
 }
 
 /// 安全地将 `CArchiveEntry` 转换为底层的 `huffman_core::ArchiveEntry`
@@ -126,7 +128,8 @@ pub unsafe extern "C" fn huffman_compress(config: *const CCompressorConfig) -> c
 
         let mut compressor =
             huffman_core::Compressor::new(workspace, compressor_entries, target_dir, target_name)
-                .with_overwrite(cfg.overwrite);
+                .with_overwrite(cfg.overwrite)
+                .with_parallelism(std::num::NonZeroUsize::new(cfg.parallelism));
         if !cfg.password.is_null() {
             if let Some(pwd) = utils::convert_c_str_to_string(cfg.password) {
                 compressor = compressor.with_password(pwd);
@@ -187,7 +190,8 @@ pub unsafe extern "C" fn huffman_decompress(config: *const CDecompressorConfig) 
         };
 
         let mut decompressor =
-            huffman_core::Decompressor::new(archive_dir, archive_name, target_dir);
+            huffman_core::Decompressor::new(archive_dir, archive_name, target_dir)
+                .with_parallelism(std::num::NonZeroUsize::new(cfg.parallelism));
         if !cfg.password.is_null() {
             if let Some(pwd) = utils::convert_c_str_to_string(cfg.password) {
                 decompressor = decompressor.with_password(pwd);
@@ -285,6 +289,7 @@ mod tests {
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
             overwrite: true,
+            parallelism: 0,
         };
 
         unsafe {
@@ -305,6 +310,7 @@ mod tests {
                 archive_name: target_name_c.as_ptr(),
                 target_dir: decomp_dir_c.as_ptr(),
                 password: ptr::null(),
+                parallelism: 0,
             };
 
             let res = huffman_decompress(&decomp_config);
@@ -359,6 +365,7 @@ mod tests {
             target_name: target_name_c.as_ptr(),
             password: password_c.as_ptr(),
             overwrite: true,
+            parallelism: 0,
         };
 
         unsafe {
@@ -374,6 +381,7 @@ mod tests {
                 archive_name: target_name_c.as_ptr(),
                 target_dir: decomp_dir_c.as_ptr(),
                 password: ptr::null(),
+                parallelism: 0,
             };
             let res = huffman_decompress(&decomp_config_no_pwd);
             assert_eq!(res, HuffmanResult::PasswordRequired as c_int);
@@ -385,6 +393,7 @@ mod tests {
                 archive_name: target_name_c.as_ptr(),
                 target_dir: decomp_dir_c.as_ptr(),
                 password: wrong_password_c.as_ptr(),
+                parallelism: 0,
             };
             let res = huffman_decompress(&decomp_config_wrong_pwd);
             assert_eq!(res, HuffmanResult::PasswordMismatch as c_int);
@@ -395,6 +404,7 @@ mod tests {
                 archive_name: target_name_c.as_ptr(),
                 target_dir: decomp_dir_c.as_ptr(),
                 password: password_c.as_ptr(),
+                parallelism: 0,
             };
             let res = huffman_decompress(&decomp_config_correct);
             assert_eq!(res, HuffmanResult::Success as c_int);
@@ -436,6 +446,7 @@ mod tests {
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
             overwrite: true,
+            parallelism: 0,
         };
 
         unsafe {
@@ -450,6 +461,7 @@ mod tests {
                 archive_name: target_name_c.as_ptr(),
                 target_dir: decomp_dir_c.as_ptr(),
                 password: ptr::null(),
+                parallelism: 0,
             };
 
             let res = huffman_decompress(&decomp_config);
@@ -506,6 +518,7 @@ mod tests {
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
             overwrite: false,
+            parallelism: 0,
         };
 
         unsafe {
@@ -522,6 +535,7 @@ mod tests {
             target_name: target_name_c.as_ptr(),
             password: ptr::null(),
             overwrite: true,
+            parallelism: 0,
         };
 
         unsafe {
@@ -542,6 +556,7 @@ mod tests {
             archive_name: target_name_c.as_ptr(),
             target_dir: decomp_dir_c.as_ptr(),
             password: ptr::null(),
+            parallelism: 0,
         };
 
         unsafe {

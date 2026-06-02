@@ -8,6 +8,7 @@ chacha20 = "0.9"
 pbkdf2 = "0.12"
 sha2 = "0.10"
 rand = "0.8"
+rayon = "1.10"
 
 [dev-dependencies]
 tempfile = "3.10"

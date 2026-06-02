@@ -313,3 +313,92 @@ fn test_workspace_all_compression_decompression() {
         "hello from file2 inside dir1"
     );
 }
+
+#[test]
+fn test_parallelism_levels_compression_decompression() {
+    use std::num::NonZeroUsize;
+    let mut rng = rand::thread_rng();
+
+    let temp_src = TempDir::new().unwrap();
+    let src_dir = temp_src.path();
+
+    // 制造一些多文件目录树结构
+    for i in 0..5 {
+        let dir_path = src_dir.join(format!("dir_{}", i));
+        fs::create_dir_all(&dir_path).unwrap();
+        for j in 0..3 {
+            let file_path = dir_path.join(format!("file_{}.bin", j));
+            let data_len = rng.gen_range(100..10_000);
+            let data: Vec<u8> = (0..data_len).map(|_| rand::random::<u8>()).collect();
+            fs::write(&file_path, &data).unwrap();
+        }
+    }
+
+    let temp_archive = TempDir::new().unwrap();
+    let temp_dest = TempDir::new().unwrap();
+    let dest_dir = temp_dest.path();
+
+    let workspace = src_dir.to_path_buf();
+    let target_dir = temp_archive.path().to_path_buf();
+
+    // 分别用不同的 parallelism 运行并验证
+    let thread_counts = vec![
+        Some(NonZeroUsize::new(1).unwrap()),
+        Some(NonZeroUsize::new(2).unwrap()),
+        Some(NonZeroUsize::new(4).unwrap()),
+        None,
+    ];
+
+    for (tc_idx, tc) in thread_counts.iter().enumerate() {
+        let target_name = format!("archive_{}.haf", tc_idx);
+
+        // 1. 压缩
+        let mut compressor = Compressor::new(
+            workspace.clone(),
+            huffman_core::CompressorEntries::All,
+            target_dir.clone(),
+            target_name.clone(),
+        ).with_parallelism(*tc);
+
+        // 奇数测试用例添加加密
+        if tc_idx % 2 == 1 {
+            compressor = compressor.with_password("parallel_pass_123".to_string());
+        }
+
+        compressor.compress().unwrap();
+
+        // 2. 解压
+        let restored_dest = dest_dir.join(format!("restored_{}", tc_idx));
+        let mut decompressor = Decompressor::new(
+            target_dir.clone(),
+            target_name,
+            restored_dest.clone(),
+        ).with_parallelism(*tc);
+
+        if tc_idx % 2 == 1 {
+            decompressor = decompressor.with_password("parallel_pass_123".to_string());
+        }
+
+        decompressor.decompress().unwrap();
+
+        // 3. 校验一致性
+        let src_paths = get_all_relative_paths(src_dir, src_dir);
+        let dest_paths = get_all_relative_paths(&restored_dest, &restored_dest);
+
+        assert_eq!(src_paths.len(), dest_paths.len());
+
+        for rel_path in &src_paths {
+            let original_path = src_dir.join(rel_path);
+            let restored_path = restored_dest.join(rel_path);
+
+            assert!(restored_path.exists());
+            if original_path.is_file() {
+                assert!(restored_path.is_file());
+                let orig_data = fs::read(&original_path).unwrap();
+                let dest_data = fs::read(&restored_path).unwrap();
+                assert_eq!(orig_data, dest_data);
+            }
+        }
+    }
+}
+

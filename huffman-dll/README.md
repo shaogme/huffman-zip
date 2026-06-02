@@ -75,10 +75,11 @@ pub enum CArchiveEntryType {
 | `workspace` | `*const c_char` | 待压缩的工作区根目录路径（以 `\0` 结尾的 C 字符串）。 |
 | `entries` | `*const CArchiveEntry` | 指向包含 `CArchiveEntry` 数组首元素的指针。 |
 | `entries_count` | `usize` | `entries` 数组中元素的个数。若此字段为 `0` 且 `entries` 指针为空，则系统默认**全量压缩**整个 `workspace` 目录。 |
-| `target_dir` | `*const c_char` | 生成的压缩包所保存的目标输出目录路径（以 `\0` 结尾的 C 字符串）。 |
+| `target_dir` | `*const c_char` | 生成的压缩包所保存的目标输出目录路径（以 `\0` 结尾 of C 字符串）。 |
 | `target_name` | `*const c_char` | 压缩包的文件名（含后缀，如 `archive.haf`，以 `\0` 结尾的 C 字符串）。 |
 | `password` | `*const c_char` | 压缩加密密码（以 `\0` 结尾的 C 字符串）。若无需加密，请传入**空指针（NULL/nullptr）**。 |
 | `overwrite` | `bool` | 若目标同名压缩包已存在，指示是否覆盖该文件。`true` 表示直接覆盖，`false` 表示不覆盖并返回 `AlreadyExists` (-7) 错误。 |
+| `parallelism` | `usize` | 并行度设置。传 `0` 表示根据系统 CPU 核心数自动选择默认并行度；传大于 `0` 的数值指定多线程压缩时的并发工作线程数。 |
 
 ### 2.4 CDecompressorConfig (解压配置)
 控制解压缩流程的配置结构体。
@@ -89,6 +90,7 @@ pub enum CArchiveEntryType {
 | `archive_name` | `*const c_char` | 压缩包的文件名（以 `\0` 结尾的 C 字符串）。 |
 | `target_dir` | `*const c_char` | 解压文件及文件夹所放置的目标输出目录路径（以 `\0` 结尾的 C 字符串）。 |
 | `password` | `*const c_char` | 解密密码（以 `\0` 结尾的 C 字符串）。若压缩包未加密，请传入**空指针（NULL/nullptr）**。 |
+| `parallelism` | `usize` | 并行度设置。传 `0` 表示根据系统 CPU 核心数自动选择默认并行度；传大于 `0` 的数值指定多线程解压时的并发工作线程数。 |
 
 ---
 
@@ -178,6 +180,7 @@ typedef struct {
     const char* target_name;
     const char* password;
     bool overwrite;
+    size_t parallelism;
 } CCompressorConfig;
 
 typedef struct {
@@ -185,6 +188,7 @@ typedef struct {
     const char* archive_name;
     const char* target_dir;
     const char* password;
+    size_t parallelism;
 } CDecompressorConfig;
 
 // 4. 声明 FFI 函数（由 DLL 导出）
@@ -217,6 +221,7 @@ int main() {
     comp_config.target_name = "my_archive.haf";
     comp_config.password = "my_secure_password"; // 传 NULL 则为不加密
     comp_config.overwrite = true; // 是否覆盖已有同名压缩包
+    comp_config.parallelism = 0;  // 0 表示使用默认并发数，大于 0 指定线程数
 
     printf("开始加密压缩...\n");
     int comp_res = huffman_compress(&comp_config);
@@ -234,7 +239,8 @@ int main() {
     decomp_config.archive_dir = "C:\\path\\to\\output";
     decomp_config.archive_name = "my_archive.haf";
     decomp_config.target_dir = "C:\\path\\to\\decompressed";
-    decomp_config.password = "my_secure_password"; // 解密密码必须匹配
+    decomp_config.password = "my_secure_password";
+    decomp_config.parallelism = 0; // 0 表示自动选择并发数，大于 0 指定线程数
 
     printf("开始解密解压缩...\n");
     int decomp_res = huffman_decompress(&decomp_config);
